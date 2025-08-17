@@ -1,141 +1,152 @@
 import os
-from typing import List, Dict
+from typing import List, Dict, Any
+from dotenv import load_dotenv
 
-from azure.identity import DefaultAzureCredential
-from azure.mgmt.compute import ComputeManagementClient
-from azure.mgmt.subscription import SubscriptionClient
+from azure.identity.aio import DefaultAzureCredential
+from azure.mgmt.compute.aio import ComputeManagementClient
 
 from .cache import get_cached, set_cached
+
+
+load_dotenv()
 
 
 class AzureSKUClient:
     """Minimal wrapper around Azure compute SKUs to list spot-capable SKUs for a region."""
 
     def __init__(self):
-        # Try environment first for explicit subscription choice
-        subscription_id = os.environ.get("AZURE_SUBSCRIPTION_ID")
-        self.credential = DefaultAzureCredential()
-
-        if not subscription_id:
-            # Attempt to discover a subscription id using the provided credentials.
-            # This requires the credential to have permission to list subscriptions.
-            try:
-                sub_client = SubscriptionClient(self.credential)
-                subs = list(sub_client.subscriptions.list())
-            except Exception as exc:  # pragma: no cover - best-effort discovery
-                raise EnvironmentError(
-                    "AZURE_SUBSCRIPTION_ID not set and subscription discovery failed: "
-                    + str(exc)
-                    + ". Set AZURE_SUBSCRIPTION_ID or ensure the credential can list subscriptions."
-                )
-
-            if not subs:
-                raise EnvironmentError(
-                    "No subscriptions found for the current credentials. Set AZURE_SUBSCRIPTION_ID to the target subscription id."
-                )
-
-            # If multiple subscriptions are found, pick the first but warn the user.
-            if len(subs) > 1:
-                # Prefer any subscription that is in 'Enabled' state
-                enabled = [
-                    s
-                    for s in subs
-                    if (getattr(s, "state", "") or "").lower() == "enabled"
-                ]
-                chosen = enabled[0] if enabled else subs[0]
-            else:
-                chosen = subs[0]
-
-            subscription_id = getattr(chosen, "subscription_id", None)
-
+        subscription_id = os.getenv("AZURE_SUBSCRIPTION_ID")
         if not subscription_id:
             raise EnvironmentError(
-                "AZURE_SUBSCRIPTION_ID resolved to empty — set it explicitly to be safe"
+                "AZURE_SUBSCRIPTION_ID environment variable is required."
+                " Set AZURE_SUBSCRIPTION_ID to the target subscription id."
             )
 
+        self.credential = DefaultAzureCredential()
         self.client = ComputeManagementClient(self.credential, subscription_id)
 
-    def _sku_supports_spot(self, sku) -> bool:
-        # capabilities is a list of objects with name/value
-        caps = getattr(sku, "capabilities", []) or []
-        for c in caps:
-            try:
-                name = (c.name or "").lower()
-                value = (c.value or "").lower()
-            except Exception:
-                continue
-            if "lowpriority" in name or "spot" in name:
-                if value == "true" or value == "yes" or value == "1":
-                    return True
-            # legacy flag name
-            if name == "lowprioritycapable" and value == "true":
-                return True
-        # some SKUs may include resourceType or restrictions; conservatively return False
-        return False
-
-    def list_spot_skus(self, region: str) -> List[Dict]:
-        """Return a list of sku dicts for the given region.
-
-        Uses a short in-process cache to avoid repeated ARM calls.
-        """
+    async def list_spot_skus(self, region: str) -> List[Dict[str, Any]]:
+        """Return a list of Spot capable SKU dicts for the given region."""
         region_lc = region.lower()
         cached = get_cached(region_lc)
         if cached is not None:
             return cached
 
-        items: List[Dict] = []
-        for sku in self.client.resource_skus.list():
-            # sku.locations is list of regions where sku is available
-            locations = [loc.lower() for loc in (getattr(sku, "locations", []) or [])]
-            if region_lc not in locations:
-                # check location_info which may have more granular zone info
-                loc_info = getattr(sku, "location_info", []) or []
-                found = False
-                for li in loc_info:
-                    if getattr(li, "location", "").lower() == region_lc:
-                        found = True
-                        break
-                if not found:
-                    continue
+        filter_expr = f"location eq '{region}'"
+        results: List[Dict[str, Any]] = []
 
-            if not self._sku_supports_spot(sku):
+        async for sku in self.client.resource_skus.list(filter=filter_expr):
+            resource_type_raw = getattr(sku, "resource_type", None) or ""
+            resource_type = str(resource_type_raw).lower()
+
+            if not ("virtualmachine" in resource_type or "compute" in resource_type):
                 continue
 
-            # parse basic capabilities
+            capabilities_list = list(getattr(sku, "capabilities", []) or [])
             caps = {
-                (c.name or ""): (c.value or "")
-                for c in (getattr(sku, "capabilities", []) or [])
+                (getattr(c, "name", "") or "").lower(): getattr(c, "value", None)
+                for c in capabilities_list
             }
-            try:
-                vcpus = int(caps.get("vCPUs") or caps.get("vCPUS") or 0)
-            except Exception:
+            low_priority = caps.get("lowprioritycapable")
+            if not (low_priority is True or str(low_priority).lower() in ("true", "1")):
+                continue
+
+            restricted = False
+            for r in getattr(sku, "restrictions", []) or []:
+                rc = getattr(r, "reason_code", None)
+                if not rc:
+                    continue
+                if str(rc).lower() == "notavailableforsubscription":
+                    locs = list(getattr(r, "locations", []) or [])
+                    if not locs or region.lower() in [str(x).lower() for x in locs]:
+                        restricted = True
+                        break
+            if restricted:
+                continue
+
+            def _as_int(val):
                 try:
-                    vcpus = int(caps.get("vcpu") or 0)
+                    return int(val)
                 except Exception:
-                    vcpus = 0
-            try:
-                memory = float(caps.get("MemoryGB") or 0)
-            except Exception:
-                memory = 0.0
+                    return None
 
-            zones = []
-            for li in getattr(sku, "location_info", []) or []:
-                if getattr(li, "location", "").lower() == region_lc:
-                    zones = getattr(li, "zones", []) or []
-                    break
+            def _as_float(val):
+                try:
+                    return float(val)
+                except Exception:
+                    return None
 
-            items.append(
-                {
-                    "vmSku": getattr(sku, "name", None),
-                    "vmSeries": getattr(sku, "resource_type", None),
-                    "vCPUs": vcpus,
-                    "memoryGB": memory,
-                    "gpu": "gpu" in (getattr(sku, "name", "") or "").lower(),
-                    "supportsSpot": True,
-                    "evictionPolicy": None,
-                    "zones": zones,
-                }
+            name_lower = (str(getattr(sku, "name", "")) or "").lower()
+            family_lower = (str(getattr(sku, "family", "")) or "").lower()
+            # Exclude B-series VMs because Azure docs list B-series as
+            # unsupported for Spot VMs. Some provider SKUs may include
+            # LowPriorityCapable flags for B variants; explicitly filter
+            if (
+                name_lower.startswith("standard_b")
+                or family_lower.startswith("standard_b")
+                or family_lower.startswith("standardb")
+            ):
+                continue
+            gpu_tokens = ("nc", "nd", "nv", "nsv2", "microsoft.hpcgpu", "gpu")
+            has_gpu = any(tok in name_lower for tok in gpu_tokens) or any(
+                tok in family_lower for tok in gpu_tokens
             )
+            for c in capabilities_list:
+                c_name = (getattr(c, "name", "") or "").lower()
+                if "gpu" in c_name or "nvidia" in c_name:
+                    has_gpu = True
 
-        set_cached(region_lc, items)
+            vcpus = _as_int(caps.get("vcpus"))
+            memory_gb = _as_float(caps.get("memorygb"))
+
+            zones_set = set()
+            for li in getattr(sku, "location_info", []) or []:
+                loc = (getattr(li, "location", None) or "").lower()
+                if loc == region.lower() or not region:
+                    for z in list(getattr(li, "zones", []) or []):
+                        zones_set.add(str(z))
+
+            minimal_restrictions = []
+            for r in getattr(sku, "restrictions", []) or []:
+                rc = getattr(r, "reason_code", None)
+                rtype = getattr(r, "type", None)
+                if rc or rtype:
+                    minimal_restrictions.append({"type": rtype, "reason_code": rc})
+
+            sku_dict: Dict[str, Any] = {
+                "name": getattr(sku, "name", None),
+                "size": getattr(sku, "size", None),
+                "family": getattr(sku, "family", None),
+                "has_gpu": has_gpu,
+                "vcpus": vcpus,
+                "memory_gb": memory_gb,
+                "zones": sorted(list(zones_set)),
+            }
+
+            results.append(sku_dict)
+
+        set_cached(region_lc, results)
+        return results
+
+    async def close(self) -> None:
+        """Close underlying async client and credential transports."""
+        try:
+            await self.client.close()
+        except Exception:
+            pass
+        try:
+            await self.credential.close()
+        except Exception:
+            pass
+
+    async def list_raw_skus(self, region: str):
+        """Return the raw provider SKU objects for diagnostic inspection.
+
+        This returns the upstream SDK objects (as-is) and should only be used
+        for debugging; it does not cache or shape the data.
+        """
+        filter_expr = f"location eq '{region}'"
+        items = []
+        async for sku in self.client.resource_skus.list(filter=filter_expr):
+            items.append(sku)
         return items

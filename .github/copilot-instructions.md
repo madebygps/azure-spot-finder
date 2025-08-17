@@ -2,13 +2,6 @@ This repo is a small FastAPI PoC (spot-finder) that queries Azure for Spot-capab
 
 Key points for an AI coding agent working in this repository
 
-- Big picture
-  - Backend-only PoC implemented under `backend/app/`.
-  - `backend/app/azure_client.py` wraps the Azure SDK to list compute SKUs and contains logic to detect "spot-capable" SKUs from SKU capabilities.
-  - `backend/app/main.py` exposes a single endpoint: `GET /v1/spot-skus` which calls `AzureSKUClient.list_spot_skus(region)`.
-  - `backend/app/cache.py` provides a tiny TTL in-process cache (cachetools) used by the SKU client.
-  - Filtering and shaping logic was added into `backend/app/filters.py` and `main.py` delegates to it for query parameters and response shaping.
-
 - How to run locally (developer workflow)
   - Create & activate a venv, install editable package (pyproject.toml is used):
     ```bash
@@ -26,15 +19,6 @@ Key points for an AI coding agent working in this repository
     curl 'http://127.0.0.1:8000/v1/spot-skus?region=eastus2&raw=true'  # raw provider payload
     ```
 
-- Authentication & environment
-  - The code uses `DefaultAzureCredential` from `azure-identity`. The agent should assume the developer may use:
-    - `az login` for convenience (DefaultAzureCredential will pick up Azure CLI token)
-    - Or environment variables: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_CLIENT_SECRET`
-  - `AZURE_SUBSCRIPTION_ID` is expected; if not set, `SubscriptionClient` is used to discover a subscription (requires list permission). Tests may mock this behavior.
-
-- Tests and fixtures
-  - Tests live under `tests/`. A fixture-like file `output.json` at the repo root is used by tests to simulate provider payloads.
-  - `pyproject.toml` includes `pytest` in dependencies. Run tests with `pytest -q` from the repo root in the activated venv.
 
 - Code patterns & conventions specific to this repo
   - Absolute imports are used in `backend/app/main.py` (e.g. `from backend.app.azure_client import AzureSKUClient`) to allow running modules directly.
