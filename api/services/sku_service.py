@@ -31,7 +31,9 @@ class SkuService:
 
         Args:
             region: Azure region name (e.g., 'eastus', 'westus2')
-            include_gpu: Whether to include GPU-enabled instances (default: False)
+            include_gpu: GPU filtering behavior:
+                - False (default): Return only non-GPU SKUs
+                - True: Return only GPU-enabled SKUs
 
         Returns:
             List of spot-capable VM SKUs with their specifications
@@ -61,7 +63,11 @@ class SkuService:
             if sku_specs:
                 # Apply GPU filtering
                 has_gpu = sku_specs.get("has_gpu", False)
-                if has_gpu and not include_gpu:
+                if include_gpu and not has_gpu:
+                    # Skip non-GPU SKUs when GPU is specifically requested
+                    continue
+                elif not include_gpu and has_gpu:
+                    # Skip GPU SKUs when GPU is not requested (default behavior)
                     continue
                 processed_skus.append(sku_specs)
 

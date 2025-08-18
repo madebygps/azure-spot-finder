@@ -16,7 +16,9 @@ async def get_spot_skus(
 
     Args:
         region: Region name (e.g., 'eastus', 'westus2')
-        gpu: Include GPU-enabled SKUs (default: False)
+        gpu: GPU filtering behavior:
+            - False (default): Return only non-GPU SKUs
+            - True: Return only GPU-enabled SKUs
     """
     if not region:
         raise HTTPException(
