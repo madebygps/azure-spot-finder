@@ -11,39 +11,42 @@ Key points for an AI coding agent working in this repository
     ```
   - Start the API server with uvicorn:
     ```bash
-    uv run uvicorn backend.app.main:app --reload
+    uv run uvicorn api.main:app --reload
     ```
   - Query example:
     ```bash
-    curl 'http://127.0.0.1:8000/v1/spot-skus?region=eastus2'
-    curl 'http://127.0.0.1:8000/v1/spot-skus?region=eastus2&raw=true'  # raw provider payload
+    # Get spot SKUs without GPU instances (default)
+    curl 'http://127.0.0.1:8000/v1/spot-skus?region=eastus'
+
+    # Include GPU-enabled instances
+    curl 'http://127.0.0.1:8000/v1/spot-skus?region=eastus&gpu=true'
     ```
 
 
 - Code patterns & conventions specific to this repo
-  - Absolute imports are used in `backend/app/main.py` (e.g. `from backend.app.azure_client import AzureSKUClient`) to allow running modules directly.
-  - The Azure client returns plain Python dicts (not Pydantic models) for portability — the `filters` module shapes the response.
-  - The `filters.filter_and_shape_items` function is the single place for dedupe, zone-union, filtering, pagination and shaping. Prefer changes there when altering response semantics.
+  - The app is organized into logical folders: `config/` (DI container), `clients/` (Azure API client), `routes/`, `services/` (business logic), `utils/` (cache, utilities)
+  - Absolute imports are used (e.g. `from api.clients.client import Client`) to allow running modules directly.
+  - The Azure client returns raw Python objects from the Azure SDK - the service layer handles all business logic, filtering, and data transformation.
+  - Dependency injection is used throughout with FastAPI's dependency system and a custom container pattern.
   - Keep default behavior conservative: by default we filter for `supportsSpot==True` and exclude GPU SKUs unless `gpu=true` is passed.
 
 - Integration points and external dependencies
   - Azure SDK: `azure-identity`, `azure-mgmt-compute`, `azure-mgmt-subscription`.
-  - Cache: `cachetools.TTLCache` (short in-process cache used by `azure_client.py`).
+  - Cache: `cachetools.TTLCache` (short in-process cache used by `utils/cache.py`).
+  - FastAPI: Dependency injection, lifespan events, router inclusion.
 
 - When editing code
-  - Add unit tests for logic that manipulates the provider payload (use `output.json` as fixture in `tests/`).
-  - Avoid network calls in unit tests — mock the Azure SDK or use `output.json` to exercise filtering/deduping.
-  - Preserve the small, explicit API contract at `GET /v1/spot-skus`. If adding parameters, update `main.py` and `filters.py` together.
+  - Add unit tests for logic that manipulates the provider payload. Currently no tests directory exists but pytest is configured.
+  - Avoid network calls in unit tests — mock the Azure SDK when creating tests.
+  - Preserve the small, explicit API contract at `GET /v1/spot-skus`. If adding parameters, update `api/routes/sku_routes.py` and `api/services/sku_service.py` together.
 
 - Debugging tips
   - If import errors occur locally, ensure you run inside the venv and `uv sync` so local package imports resolve.
   - If `AZURE_SUBSCRIPTION_ID` discovery fails, check that the credential in your environment can list subscriptions (`az account show` / `az login`).
 
 - Files to inspect for context
-  - `backend/app/azure_client.py` — discovery, spot detection logic, SDK usage
-  - `backend/app/main.py` — API surface and query params
-  - `backend/app/filters.py` — dedupe, filter, shape, pagination
-  - `backend/app/cache.py` — TTL cache details
-  - `backend/README.md` — run instructions and prerequisites
-
-If anything here is unclear or you want this shortened/expanded, tell me which section to iterate on and I will update the file.
+  - `api/clients/client.py` — pure Azure API client for authentication and raw API calls
+  - `api/services/sku_service.py` — business logic for spot detection, filtering, GPU detection, data transformation
+  - `api/routes/sku_routes.py` — API endpoints and query parameter handling
+  - `api/utils/cache.py` — TTL cache details
+  - `api/README.md` — run instructions and prerequisites
