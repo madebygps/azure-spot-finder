@@ -1,4 +1,4 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from api.clients.client import Client
 from api.utils.cache import get_cached, set_cached
@@ -22,9 +22,13 @@ class SkuService:
         self.client = client
 
     async def list_spot_skus(
-        self, region: str, include_gpu: bool = False
+        self,
+        region: str,
+        include_gpu: bool = False,
+        max_vcpus: Optional[int] = None,
+        max_memory_gb: Optional[float] = None,
     ) -> List[Dict[str, Any]]:
-        """List spot-capable VMs in the given region.
+        """List spot-capable VMs in the given region with optional resource filters.
 
         This method uses the Azure Management API to get all VM SKUs for a region,
         then filters and processes them to return only spot-capable instances.
@@ -34,6 +38,8 @@ class SkuService:
             include_gpu: GPU filtering behavior:
                 - False (default): Return only non-GPU SKUs
                 - True: Return only GPU-enabled SKUs
+            max_vcpus: Maximum number of vCPUs to include (None = no limit)
+            max_memory_gb: Maximum memory in GB to include (None = no limit)
 
         Returns:
             List of spot-capable VM SKUs with their specifications
@@ -45,7 +51,7 @@ class SkuService:
         region = region.strip().lower()
 
         # Check cache first
-        cache_key = f"spot_skus:{region}:gpu={include_gpu}"
+        cache_key = f"spot_skus:{region}:gpu={include_gpu}:vcpus={max_vcpus}:memory={max_memory_gb}"
         cached = get_cached(cache_key)
         if cached is not None:
             return cached
@@ -69,6 +75,21 @@ class SkuService:
                 elif not include_gpu and has_gpu:
                     # Skip GPU SKUs when GPU is not requested (default behavior)
                     continue
+
+                # Apply vCPU filtering
+                vcpus = sku_specs.get("vcpus")
+                if max_vcpus is not None and vcpus is not None and vcpus > max_vcpus:
+                    continue
+
+                # Apply memory filtering
+                memory_gb = sku_specs.get("memory_gb")
+                if (
+                    max_memory_gb is not None
+                    and memory_gb is not None
+                    and memory_gb > max_memory_gb
+                ):
+                    continue
+
                 processed_skus.append(sku_specs)
 
         # Sort for consistent ordering
