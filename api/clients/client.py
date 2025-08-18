@@ -173,7 +173,6 @@ class Client:
             "vcpus": vcpus,
             "memory_gb": memory_gb,
             "zones": sorted(list(zones_set)),
-            "supports_spot": True,  # We already filtered for this
         }
 
     async def list_raw_skus(self, region: str) -> List[Any]:
