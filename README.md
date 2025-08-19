@@ -1,4 +1,4 @@
-# spot-finder
+# Azure Spot Finder
 
 A FastAPI-based tool to discover Azure spot-capable VM SKUs by region.
 
