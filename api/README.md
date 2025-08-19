@@ -33,13 +33,30 @@ curl 'http://127.0.0.1:8000/v1/spot-skus?region=eastus&architecture=Arm64'
 
 # Get only x64-based instances (Intel/AMD processors)
 curl 'http://127.0.0.1:8000/v1/spot-skus?region=eastus&architecture=x64'
-```
 
-## API Reference
+# Get intelligent recommendations (top 5 cost-optimized)
+curl 'http://127.0.0.1:8000/v1/spot-recommendations?region=eastus&optimize_for=cost'
+
+# Get reliability-focused recommendations with constraints
+curl 'http://127.0.0.1:8000/v1/spot-recommendations?region=eastus&optimize_for=reliability&max_hourly_cost=0.05&max_eviction_rate=5-10'
+```## API Reference
 
 ### GET /v1/spot-skus
 
 Returns a list of Azure VM SKUs that support spot instances for the specified region.
+
+### GET /v1/spot-recommendations
+
+**NEW!** Returns intelligent spot instance recommendations based on multi-factor scoring.
+
+This endpoint analyzes all available spot SKUs and provides top recommendations based on:
+- Price optimization (weighted scoring for cost efficiency)
+- Eviction reliability (lower eviction rates score higher)
+- Performance value (price/performance ratios)
+- Availability zones (higher availability scores better)
+- Architecture preferences (ARM64 vs x64 optimization)
+
+#### GET /v1/spot-skus Parameters
 
 **Query Parameters:**
 
@@ -50,6 +67,21 @@ Returns a list of Azure VM SKUs that support spot instances for the specified re
 - `max_memory_gb` (optional): Maximum memory in GB to include (default: 32.0)
 - `include_pricing` (optional): Include spot pricing data (default: false)
 - `include_eviction_rates` (optional): Include eviction rate data (default: false)
+- `currency_code` (optional): Currency for pricing data (default: 'USD')
+
+#### GET /v1/spot-recommendations Parameters
+
+**Query Parameters:**
+
+- `region` (required): Azure region name
+- `limit` (optional): Number of recommendations (1-10, default: 5)
+- `optimize_for` (optional): Strategy - 'cost', 'reliability', 'performance', 'balanced' (default: 'balanced')
+- `max_hourly_cost` (optional): Maximum acceptable hourly cost constraint
+- `max_eviction_rate` (optional): Maximum eviction rate - '0-5', '5-10', '10-15', '15-20', '20+'
+- `architecture_preference` (optional): Preferred architecture - 'x64' or 'Arm64'
+- `gpu` (optional): Include GPU instances (default: false)
+- `max_vcpus` (optional): Maximum vCPUs (default: 8)
+- `max_memory_gb` (optional): Maximum memory in GB (default: 32.0)
 - `currency_code` (optional): Currency for pricing data (default: 'USD')
 
 **Response Format:**

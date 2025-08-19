@@ -45,6 +45,12 @@ curl 'http://127.0.0.1:8000/v1/spot-skus?region=eastus&architecture=Arm64'
 # Get only x64-based instances (Intel/AMD processors)
 curl 'http://127.0.0.1:8000/v1/spot-skus?region=eastus&architecture=x64'
 
+# Get intelligent recommendations (top 5 cost-optimized)
+curl 'http://127.0.0.1:8000/v1/spot-recommendations?region=eastus&optimize_for=cost'
+
+# Get reliability-focused recommendations with cost constraint
+curl 'http://127.0.0.1:8000/v1/spot-recommendations?region=eastus&optimize_for=reliability&max_hourly_cost=0.05'
+
 # Try different regions
 curl 'http://127.0.0.1:8000/v1/spot-skus?region=westus2'
 ```
@@ -53,7 +59,27 @@ curl 'http://127.0.0.1:8000/v1/spot-skus?region=westus2'
 
 Once running, visit <http://127.0.0.1:8000/> for interactive API documentation.
 
-### Key Endpoint: `GET /v1/spot-skus`
+### Key Endpoints
+
+#### `GET /v1/spot-skus` - List Spot SKUs
+
+Returns all spot-capable VM SKUs for a region with optional filtering.
+
+#### `GET /v1/spot-recommendations` - Smart Recommendations
+
+**NEW!** Returns top-ranked spot instance recommendations based on intelligent scoring that considers:
+
+- **Price optimization** - Lower costs score higher
+- **Reliability** - Lower eviction rates score higher
+- **Performance** - Better price/performance ratios score higher
+- **Availability** - More availability zones score higher
+- **Architecture preferences** - ARM64 vs x64 preferences
+
+**Example Optimization Strategies:**
+- `optimize_for=cost` - Best bang for buck
+- `optimize_for=reliability` - Lowest eviction risk
+- `optimize_for=performance` - Best price/performance
+- `optimize_for=balanced` - Balanced scoring (default)
 
 **Parameters:**
 
