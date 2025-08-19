@@ -24,6 +24,10 @@ async def get_spot_skus(
         default=False,
         description="Include spot pricing data from Azure Retail Prices API",
     ),
+    include_eviction_rates: bool = Query(
+        default=False,
+        description="Include eviction rate data from Azure Resource Graph",
+    ),
     currency_code: str = Query(
         default="USD",
         description="Currency code for pricing (e.g., 'USD', 'EUR', 'GBP')",
@@ -39,6 +43,7 @@ async def get_spot_skus(
         max_vcpus: Maximum number of vCPUs (default: 8)
         max_memory_gb: Maximum memory in GB (default: 32.0)
         include_pricing: Include real-time spot pricing data (default: False)
+        include_eviction_rates: Include eviction rate data (default: False)
         currency_code: Currency for pricing data (default: 'USD')
     """
     if not region:
@@ -53,6 +58,7 @@ async def get_spot_skus(
             max_vcpus=max_vcpus,
             max_memory_gb=max_memory_gb,
             include_pricing=include_pricing,
+            include_eviction_rates=include_eviction_rates,
             currency_code=currency_code,
         )
         return {
@@ -63,6 +69,7 @@ async def get_spot_skus(
                 "max_vcpus": max_vcpus,
                 "max_memory_gb": max_memory_gb,
                 "include_pricing": include_pricing,
+                "include_eviction_rates": include_eviction_rates,
                 "currency_code": currency_code,
                 "count": len(items),
             },

@@ -1,7 +1,8 @@
 from typing import List, Dict, Any, Optional
 
-from api.clients.client import Client
+from api.clients.compute_client import ComputeClient
 from api.clients.pricing_client import PricingClient
+from api.clients.eviction_client import EvictionClient
 from api.utils.cache import get_cached, set_cached
 
 
@@ -19,9 +20,15 @@ class SkuService:
     The Client handles only raw Azure API interactions.
     """
 
-    def __init__(self, client: Client, pricing_client: Optional[PricingClient] = None):
+    def __init__(
+        self,
+        client: ComputeClient,
+        pricing_client: Optional[PricingClient] = None,
+        eviction_client: Optional[EvictionClient] = None,
+    ):
         self.client = client
         self.pricing_client = pricing_client
+        self.eviction_client = eviction_client
 
     async def list_spot_skus(
         self,
@@ -30,6 +37,7 @@ class SkuService:
         max_vcpus: Optional[int] = None,
         max_memory_gb: Optional[float] = None,
         include_pricing: bool = False,
+        include_eviction_rates: bool = False,
         currency_code: str = "USD",
     ) -> List[Dict[str, Any]]:
         """List spot-capable VMs in the given region with optional resource filters.
@@ -45,10 +53,11 @@ class SkuService:
             max_vcpus: Maximum number of vCPUs to include (None = no limit)
             max_memory_gb: Maximum memory in GB to include (None = no limit)
             include_pricing: Whether to include pricing data (default: False)
+            include_eviction_rates: Whether to include eviction rate data (default: False)
             currency_code: Currency for pricing data (default: 'USD')
 
         Returns:
-            List of spot-capable VM SKUs with their specifications and optional pricing
+            List of spot-capable VM SKUs with their specifications, optional pricing, and optional eviction rates
         """
         if not region or not region.strip():
             raise ValueError("Region parameter is required and cannot be empty")
@@ -57,7 +66,7 @@ class SkuService:
         region = region.strip().lower()
 
         # Check cache first
-        cache_key = f"spot_skus:{region}:gpu={include_gpu}:vcpus={max_vcpus}:memory={max_memory_gb}:pricing={include_pricing}:currency={currency_code}"
+        cache_key = f"spot_skus:{region}:gpu={include_gpu}:vcpus={max_vcpus}:memory={max_memory_gb}:pricing={include_pricing}:eviction={include_eviction_rates}:currency={currency_code}"
         cached = get_cached(cache_key)
         if cached is not None:
             return cached
@@ -138,6 +147,41 @@ class SkuService:
                 # Log pricing error but don't fail the entire request
                 print(f"Failed to fetch pricing data: {e}")
                 # No need to add empty pricing fields if pricing failed
+
+        # Add eviction rate data if requested
+        if include_eviction_rates and self.eviction_client and processed_skus:
+            try:
+                eviction_data = await self.eviction_client.get_eviction_rates(
+                    locations=[region]
+                )
+
+                # Create case-insensitive lookup for eviction rates by SKU name
+                eviction_lookup = {}
+                for sku_name, location_data in eviction_data.items():
+                    eviction_lookup[sku_name.lower()] = location_data
+
+                # Add eviction rates to each SKU
+                for sku in processed_skus:
+                    sku_name = sku.get("name")
+                    if sku_name:
+                        # Convert to lowercase for lookup
+                        sku_name_lower = sku_name.lower()
+                        if sku_name_lower in eviction_lookup:
+                            # Get eviction rate for this SKU in the requested region
+                            sku_eviction_data = eviction_lookup[sku_name_lower]
+                            if region in sku_eviction_data:
+                                eviction_rate = sku_eviction_data[region]
+                                sku.update(
+                                    {
+                                        "eviction_rate": eviction_rate,
+                                        "eviction_rate_location": region,
+                                    }
+                                )
+
+            except Exception as e:
+                # Log eviction rate error but don't fail the entire request
+                print(f"Failed to fetch eviction rate data: {e}")
+                # No need to add empty eviction rate fields if fetching failed
 
         # Cache the results
         set_cached(cache_key, processed_skus)

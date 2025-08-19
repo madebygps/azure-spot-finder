@@ -1,34 +1,27 @@
-import os
 from typing import List, Any, Dict
 from dotenv import load_dotenv
 
-from azure.identity.aio import DefaultAzureCredential
 from azure.mgmt.compute.aio import ComputeManagementClient
+from api.clients.azure_client import AzureClient
 
 
 load_dotenv()
 
 
-class Client:
-    """Azure API client for compute resource operations.
+class ComputeClient:
+    """Azure Compute Management client for SKU and VM operations."""
 
-    This client handles:
-    - Authentication with Azure
-    - Making raw API calls to Azure Compute Management
-    - Returning unprocessed Azure SDK objects
-    - Handling connection lifecycle
-    """
+    def __init__(self, azure_client: AzureClient):
+        """Initialize Compute client with Azure client.
 
-    def __init__(self):
-        subscription_id = os.getenv("AZURE_SUBSCRIPTION_ID")
-        if not subscription_id:
-            raise EnvironmentError(
-                "AZURE_SUBSCRIPTION_ID environment variable is required."
-                " Set AZURE_SUBSCRIPTION_ID to the target subscription id."
-            )
-
-        self.credential = DefaultAzureCredential()
-        self.client = ComputeManagementClient(self.credential, subscription_id)
+        Args:
+            azure_client: Centralized Azure client for authentication
+        """
+        self.azure_client = azure_client
+        self.credential = azure_client.get_async_credential()
+        self.client = ComputeManagementClient(
+            self.credential, azure_client.subscription_id
+        )
 
     async def get_sku_specs(
         self, region: str, sku_names: List[str]
@@ -196,12 +189,12 @@ class Client:
         return results
 
     async def close(self) -> None:
-        """Close underlying async client and credential transports."""
+        """Close underlying async client.
+
+        Note: Credential cleanup is handled by the Azure client
+        during application shutdown, not by individual clients.
+        """
         try:
             await self.client.close()
-        except Exception:
-            pass
-        try:
-            await self.credential.close()
         except Exception:
             pass

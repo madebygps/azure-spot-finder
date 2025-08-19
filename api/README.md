@@ -92,8 +92,11 @@ api/
 │   └── sku_routes.py         # REST endpoints for spot SKU operations
 ├── services/                  # Business logic layer - core application logic
 │   └── sku_service.py        # SKU filtering, GPU detection, and data transformation
-├── clients/                   # Data access layer - external service integrations
-│   └── client.py             # Azure SDK client for VM SKU discovery
+├── clients/                   # Data access layer - Azure service integrations
+│   ├── azure_client.py       # Centralized Azure authentication and core services
+│   ├── compute_client.py     # Azure Compute Management for SKU operations
+│   ├── pricing_client.py     # Azure Retail Prices API client
+│   └── eviction_client.py    # Azure Resource Graph eviction rates client
 └── utils/                     # Infrastructure utilities and cross-cutting concerns
     └── cache.py              # TTL caching utility for API responses
 ```
@@ -104,8 +107,8 @@ api/
 
 - **`dependencies.py`**:
   - `DependencyContainer` class for managing singleton instances
-  - FastAPI dependency functions (`provide_client`, `provide_sku_service`)
-  - Simple dependency injection with concrete classes
+  - FastAPI dependency functions (`provide_azure_client`, `provide_compute_client`, `provide_sku_service`)
+  - Centralized dependency injection with concrete classes
 
 #### `routes/` - HTTP Layer
 
@@ -124,10 +127,23 @@ api/
 
 #### `clients/` - Data Access Layer
 
-- **`client.py`**:
-  - `Client` class for Azure SDK integration
-  - Azure SDK client for VM SKU discovery
-  - Raw SKU data retrieval and connection management
+- **`azure_client.py`**:
+  - `AzureClient` class for centralized Azure authentication
+  - Manages both sync and async credentials with token caching
+  - Provides unified Azure service authentication interface
+
+- **`compute_client.py`**:
+  - `ComputeClient` class for Azure Compute Management operations
+  - VM SKU discovery and technical specifications
+  - Raw SKU data retrieval and Azure SDK integration
+
+- **`pricing_client.py`**:
+  - Integration with Azure Retail Prices API
+  - Spot pricing data retrieval
+
+- **`eviction_client.py`**:
+  - Azure Resource Graph integration for eviction rates
+  - Batch API operations for performance
 
 #### `utils/` - Infrastructure Utilities
 
@@ -145,29 +161,31 @@ api/
 
 ### Dependency Flow
 
-The architecture follows clean dependency rules:
+The architecture follows clean dependency rules with centralized authentication:
 
 ```text
 HTTP Request → routes/ → services/ → clients/ → Azure SDK
                 ↓          ↓         ↓
-            config/ ←    utils/
+            config/ ←    utils/   azure_client/
 ```
 
 - **Routes** depend on services (business logic)
 - **Services** depend on clients (data access) and utilities (caching)
-- **Clients** use Azure SDK for data access
+- **Clients** use centralized Azure authentication and Azure SDK for data access
+- **AzureClient** provides unified authentication for all Azure services
 - **Config** orchestrates dependency injection
 - **Utils** provide cross-cutting concerns (caching)
 - **No circular dependencies** - ensures testability and maintainability
 
 ### Key Design Patterns
 
-1. **Direct Implementation**: Simplified Azure-only architecture without generic abstractions
+1. **Centralized Authentication**: Unified Azure credential management through `AzureClient`
 2. **Service Layer**: Business logic separated from HTTP and data concerns
 3. **Clean Architecture**: Dependencies point inward, business logic remains isolated
 4. **TTL Caching**: Performance optimization with 30-minute cache expiration
 5. **Fail-Fast DI**: Container errors are caught at startup rather than during request processing
 6. **Type Safety**: Full type annotations for better developer experience and runtime safety
+7. **Specialized Clients**: Domain-specific clients (`ComputeClient`, `PricingClient`, `EvictionClient`) with shared authentication
 
 ## How a Request Flows Through the System
 
@@ -190,13 +208,14 @@ When you make a request like `curl 'http://127.0.0.1:8000/v1/spot-skus?region=ea
 
 - Service validates region parameter and GPU preference
 - Checks cache for existing results (30-minute TTL)
-- Delegates to client for fresh data if needed
+- Delegates to compute client for fresh data if needed
 - Applies business rules: spot capability, GPU inclusion/exclusion
 - Returns structured data with metadata
 
-### 4. **Data Access** (`clients/client.py`)
+### 4. **Data Access** (`clients/compute_client.py`)
 
-- Azure SDK client makes authenticated API call
+- Compute client uses centralized Azure authentication from `AzureClient`
+- Makes authenticated API call to Azure Compute Management
 - Filters results at Azure level: `location eq 'eastus'`
 - Returns raw Azure SDK objects to service layer
 
@@ -225,7 +244,9 @@ utils/cache.py (cache check)
 ┌─ CACHE HIT: return cached results ────┐
 │                                       │
 └─ CACHE MISS: continue ↓               │
-   clients/client.py (Azure SDK call)   │
+   clients/compute_client.py (Azure SDK call)   │
+       ↓                                │
+   clients/azure_client.py (authentication)     │
        ↓                                │
    services/sku_service.py (filtering)  │
        ↓                                │
