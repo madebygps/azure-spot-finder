@@ -76,6 +76,7 @@ Returns all spot-capable VM SKUs for a region with optional filtering.
 - **Architecture preferences** - ARM64 vs x64 preferences
 
 **Example Optimization Strategies:**
+
 - `optimize_for=cost` - Best bang for buck
 - `optimize_for=reliability` - Lowest eviction risk
 - `optimize_for=performance` - Best price/performance
@@ -128,6 +129,48 @@ Built with clean architecture principles:
 - **Utils** (`api/utils/`): Caching and utilities
 
 Features 30-minute TTL caching for performance and dependency injection for clean testability.
+
+## Known Limitations and Implementation Notes
+
+### Architecture Detection
+
+The tool determines CPU architecture (x64 vs ARM64) using **hardcoded naming pattern matching** rather than querying Azure SDK metadata directly. This is a pragmatic workaround for the current Azure SDK limitations:
+
+- **ARM64 Detection**: Looks for specific patterns in SKU names like `pls`, `pds`, `ps_`, `eps`, `epds` (e.g., Dplsv5, Dpsv6, Epsv5)
+- **x64 Detection**: Falls back to x64 for all other SKUs (Ds, Es, Fs, etc.)
+
+**Implementation location**: `api/clients/compute_client.py` in `_extract_sku_specs()`
+
+**Potential improvements**: This approach works reliably for current Azure SKU naming conventions, but could break if Microsoft changes their naming patterns. A more robust solution would query Azure's hardware profile APIs directly when such APIs become available.
+
+### Eviction Rate Data Source
+
+Spot VM eviction rates are obtained by **replicating the same Azure Resource Graph query that the Azure Portal uses** rather than through an official public API:
+
+- **Data source**: Azure Resource Graph `SpotResources` table via batch API
+- **Query**: Uses the same KQL query that powers the Azure Portal's spot instance eviction rate displays
+- **Authentication**: Requires standard Azure Management API permissions
+
+**Implementation location**: `api/clients/eviction_client.py`
+
+**Important considerations**:
+
+- This approach provides the same data users see in the Azure Portal
+- The query structure could potentially change if Microsoft updates their internal portal implementation
+- No official public API exists specifically for eviction rate data as of this implementation
+- Rate limiting applies per Azure's standard Resource Graph quotas
+
+**Potential improvements**: Monitor for official Azure APIs that expose eviction rate data directly. Microsoft may provide dedicated endpoints for this data in the future.
+
+### Authentication Requirements
+
+The tool requires Azure credentials with permissions for:
+
+- **Compute Management API**: To list VM SKUs and capabilities
+- **Resource Graph API**: To query spot eviction rates
+- **Retail Prices API**: For pricing data (when enabled)
+
+Users must ensure their Azure credentials (via Azure CLI, managed identity, or service principal) have appropriate permissions for these services.
 
 ## Development
 
