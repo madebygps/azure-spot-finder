@@ -133,6 +133,23 @@ class ComputeClient:
             if "gpu" in c_name or "nvidia" in c_name:
                 has_gpu = True
 
+        # Business Logic: Architecture detection using Azure naming patterns
+        # ARM64 SKUs include "p" in the series name (Dpls, Dps, Eps, Dpds, Epds)
+        # x64 SKUs use traditional naming (Ds, Es, Fs, etc.)
+        arm64_patterns = (
+            "pls",  # Dplsv5, Dplsv6 series
+            "pds",  # Dpdsv5, Dpdsv6 series
+            "ps_",  # Dpsv5, Dpsv6 series
+            "pds_",  # Dpdsv5, Dpdsv6 series
+            "pls_",  # Dplsv5, Dplsv6 series
+            "eps",  # Epsv5, Epsv6 series
+            "epds",  # Epdsv5, Epdsv6 series
+        )
+        is_arm64 = any(pattern in name_lower for pattern in arm64_patterns) or any(
+            pattern in family_lower for pattern in arm64_patterns
+        )
+        architecture = "Arm64" if is_arm64 else "x64"
+
         # Data transformation: Parse Azure values
         def _as_int(val):
             try:
@@ -163,6 +180,7 @@ class ComputeClient:
             "size": getattr(sku, "size", None),
             "family": getattr(sku, "family", None),
             "has_gpu": has_gpu,
+            "architecture": architecture,
             "vcpus": vcpus,
             "memory_gb": memory_gb,
             "zones": sorted(list(zones_set)),

@@ -34,6 +34,7 @@ class SkuService:
         self,
         region: str,
         include_gpu: bool = False,
+        architecture: Optional[str] = None,
         max_vcpus: Optional[int] = None,
         max_memory_gb: Optional[float] = None,
         include_pricing: bool = False,
@@ -50,6 +51,10 @@ class SkuService:
             include_gpu: GPU filtering behavior:
                 - False (default): Return only non-GPU SKUs
                 - True: Return only GPU-enabled SKUs
+            architecture: CPU architecture filter:
+                - None (default): Return all architectures
+                - 'x64': Return only Intel/AMD x64 SKUs
+                - 'Arm64': Return only ARM64 SKUs (Ampere Altra, Azure Cobalt 100)
             max_vcpus: Maximum number of vCPUs to include (None = no limit)
             max_memory_gb: Maximum memory in GB to include (None = no limit)
             include_pricing: Whether to include pricing data (default: False)
@@ -62,11 +67,15 @@ class SkuService:
         if not region or not region.strip():
             raise ValueError("Region parameter is required and cannot be empty")
 
+        # Validate architecture parameter
+        if architecture is not None and architecture not in ("x64", "Arm64"):
+            raise ValueError("Architecture must be 'x64' or 'Arm64'")
+
         # Normalize region name
         region = region.strip().lower()
 
         # Check cache first
-        cache_key = f"spot_skus:{region}:gpu={include_gpu}:vcpus={max_vcpus}:memory={max_memory_gb}:pricing={include_pricing}:eviction={include_eviction_rates}:currency={currency_code}"
+        cache_key = f"spot_skus:{region}:gpu={include_gpu}:arch={architecture}:vcpus={max_vcpus}:memory={max_memory_gb}:pricing={include_pricing}:eviction={include_eviction_rates}:currency={currency_code}"
         cached = get_cached(cache_key)
         if cached is not None:
             return cached
@@ -89,6 +98,11 @@ class SkuService:
                     continue
                 elif not include_gpu and has_gpu:
                     # Skip GPU SKUs when GPU is not requested (default behavior)
+                    continue
+
+                # Apply architecture filtering
+                sku_architecture = sku_specs.get("architecture")
+                if architecture is not None and sku_architecture != architecture:
                     continue
 
                 # Apply vCPU filtering

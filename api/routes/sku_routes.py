@@ -13,6 +13,10 @@ async def get_spot_skus(
     region: str,
     sku_service: SkuServiceDep,
     gpu: bool = False,
+    architecture: Optional[str] = Query(
+        default=None,
+        description="Filter by CPU architecture: 'x64' for Intel/AMD, 'Arm64' for ARM processors",
+    ),
     max_vcpus: Optional[int] = Query(
         default=8, description="Maximum vCPUs (default: 8 for cost efficiency)"
     ),
@@ -40,6 +44,10 @@ async def get_spot_skus(
         gpu: GPU filtering behavior:
             - False (default): Return only non-GPU SKUs
             - True: Return only GPU-enabled SKUs
+        architecture: CPU architecture filter:
+            - None (default): Return all architectures
+            - 'x64': Return only Intel/AMD x64 SKUs
+            - 'Arm64': Return only ARM64 SKUs (Ampere Altra, Azure Cobalt 100)
         max_vcpus: Maximum number of vCPUs (default: 8)
         max_memory_gb: Maximum memory in GB (default: 32.0)
         include_pricing: Include real-time spot pricing data (default: False)
@@ -55,6 +63,7 @@ async def get_spot_skus(
         items = await sku_service.list_spot_skus(
             region,
             include_gpu=gpu,
+            architecture=architecture,
             max_vcpus=max_vcpus,
             max_memory_gb=max_memory_gb,
             include_pricing=include_pricing,
@@ -66,6 +75,7 @@ async def get_spot_skus(
             "metadata": {
                 "region": region,
                 "include_gpu": gpu,
+                "architecture": architecture,
                 "max_vcpus": max_vcpus,
                 "max_memory_gb": max_memory_gb,
                 "include_pricing": include_pricing,

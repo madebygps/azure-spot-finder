@@ -27,6 +27,12 @@ curl 'http://127.0.0.1:8000/v1/spot-skus?region=eastus'
 
 # Include GPU-enabled instances
 curl 'http://127.0.0.1:8000/v1/spot-skus?region=eastus&gpu=true'
+
+# Get only ARM64-based instances (Ampere Altra, Azure Cobalt 100)
+curl 'http://127.0.0.1:8000/v1/spot-skus?region=eastus&architecture=Arm64'
+
+# Get only x64-based instances (Intel/AMD processors)
+curl 'http://127.0.0.1:8000/v1/spot-skus?region=eastus&architecture=x64'
 ```
 
 ## API Reference
@@ -39,6 +45,12 @@ Returns a list of Azure VM SKUs that support spot instances for the specified re
 
 - `region` (required): Azure region name (e.g., 'eastus', 'westus2', 'eastus2')
 - `gpu` (optional): Include GPU-enabled SKUs (default: false)
+- `architecture` (optional): Filter by CPU architecture - 'x64' for Intel/AMD, 'Arm64' for ARM processors (default: all)
+- `max_vcpus` (optional): Maximum vCPUs to include (default: 8)
+- `max_memory_gb` (optional): Maximum memory in GB to include (default: 32.0)
+- `include_pricing` (optional): Include spot pricing data (default: false)
+- `include_eviction_rates` (optional): Include eviction rate data (default: false)
+- `currency_code` (optional): Currency for pricing data (default: 'USD')
 
 **Response Format:**
 
@@ -69,6 +81,7 @@ Returns a list of Azure VM SKUs that support spot instances for the specified re
 - `size`: SKU size identifier
 - `family`: Azure SKU family name
 - `has_gpu`: Whether the SKU includes GPU resources
+- `architecture`: CPU architecture - 'x64' for Intel/AMD, 'Arm64' for ARM processors
 - `vcpus`: Number of virtual CPU cores
 - `memory_gb`: Memory allocation in gigabytes
 - `zones`: Available Azure availability zones for this SKU in the region

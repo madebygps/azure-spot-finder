@@ -39,6 +39,12 @@ curl 'http://127.0.0.1:8000/v1/spot-skus?region=eastus'
 # Include GPU-enabled instances
 curl 'http://127.0.0.1:8000/v1/spot-skus?region=eastus&gpu=true'
 
+# Get only ARM64-based instances (Ampere Altra, Azure Cobalt 100)
+curl 'http://127.0.0.1:8000/v1/spot-skus?region=eastus&architecture=Arm64'
+
+# Get only x64-based instances (Intel/AMD processors)
+curl 'http://127.0.0.1:8000/v1/spot-skus?region=eastus&architecture=x64'
+
 # Try different regions
 curl 'http://127.0.0.1:8000/v1/spot-skus?region=westus2'
 ```
@@ -53,6 +59,12 @@ Once running, visit <http://127.0.0.1:8000/> for interactive API documentation.
 
 - `region` (required): Azure region (e.g., 'eastus', 'westus2')
 - `gpu` (optional): Include GPU SKUs (default: false)
+- `architecture` (optional): Filter by CPU architecture - 'x64' for Intel/AMD, 'Arm64' for ARM processors (default: all)
+- `max_vcpus` (optional): Maximum vCPUs (default: 8)
+- `max_memory_gb` (optional): Maximum memory in GB (default: 32.0)
+- `include_pricing` (optional): Include spot pricing data (default: false)
+- `include_eviction_rates` (optional): Include eviction rate data (default: false)
+- `currency_code` (optional): Currency for pricing (default: 'USD')
 
 **Response:**
 
@@ -64,6 +76,7 @@ Once running, visit <http://127.0.0.1:8000/> for interactive API documentation.
       "size": "D2s_v3",
       "family": "standardDSv3Family",
       "has_gpu": false,
+      "architecture": "x64",
       "vcpus": 2,
       "memory_gb": 8,
       "zones": ["1", "2", "3"]
@@ -72,6 +85,7 @@ Once running, visit <http://127.0.0.1:8000/> for interactive API documentation.
   "metadata": {
     "region": "eastus",
     "include_gpu": false,
+    "architecture": null,
     "count": 245
   }
 }
